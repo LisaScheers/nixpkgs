@@ -8,7 +8,7 @@
   bash,
   chromedriver,
   nodejs_24,
-  python3,
+  python314,
   makeWrapper,
   openapi-generator-cli,
   go,
@@ -20,13 +20,13 @@
 let
   nodejs = nodejs_24;
 
-  version = "2025.12.5";
+  version = "2026.5.2";
 
   src = fetchFromGitHub {
     owner = "goauthentik";
     repo = "authentik";
     tag = "version/${version}";
-    hash = "sha256-LPGAhbtmuztDQ4CVhUXb+vBU5HjvNZ7JicI5r3lr1QQ=";
+    hash = "sha256-djsdph2E+JIIu9Sy5gJwBG378nunXXK2LPW5z/oneMs=";
   };
 
   meta = {
@@ -46,24 +46,9 @@ let
 
   client-go = stdenvNoCC.mkDerivation {
     pname = "authentik-client-go";
-    version = "3.${version}";
-    inherit meta;
+    inherit version src meta;
 
-    src = fetchFromGitHub {
-      owner = "goauthentik";
-      repo = "client-go";
-      tag = "v3.2025.12.4";
-      hash = "sha256-+/CfOE2HkBU+ZddvdXGenB/z8xNFk8cujpZpMXyh3cY=";
-    };
-
-    patches = [
-      ./client-go-config.patch
-    ];
-
-    postPatch = ''
-      substituteInPlace ./config.yaml \
-        --replace-fail '/local' "$(pwd)"
-    '';
+    sourceRoot = "${src.name}/packages/client-go";
 
     nativeBuildInputs = [
       openapi-generator-cli
@@ -86,8 +71,6 @@ let
     installPhase = ''
       runHook preInstall
 
-      cp go.mod go.sum $out
-
       cd $out
       rm -rf test
       rm -f .travis.yml git_push.sh
@@ -101,8 +84,8 @@ let
     inherit version src meta;
 
     postPatch = ''
-      substituteInPlace ./scripts/api/ts-config.yaml \
-        --replace-fail '/local' "$(pwd)"
+      substituteInPlace ./packages/client-ts/config.yaml \
+        --replace-fail '/local' "$(pwd)/packages/client-ts"
     '';
 
     nativeBuildInputs = [
@@ -117,7 +100,7 @@ let
       openapi-generator-cli generate \
         -i ./schema.yml -o $out \
         -g typescript-fetch \
-        -c ./scripts/api/ts-config.yaml \
+        -c ./packages/client-ts/config.yaml \
         --additional-properties=npmVersion=${version} \
         --git-repo-id authentik --git-user-id goauthentik
 
@@ -137,8 +120,8 @@ let
 
     outputHash =
       {
-        "aarch64-linux" = "sha256-smm9x29z7gOI7Wq0NvP45KHtBbT6p1lH6IjEf9LRuGs=";
-        "x86_64-linux" = "sha256-K86wnn50svP+QG3i0mggH8RQgfoIqEmyQTouz35xzw8=";
+        "aarch64-linux" = "sha256-fwQS71f0/SgP7TowNzHuMihVboLy+ZpSNiY8D9mOHP0=";
+        "x86_64-linux" = "sha256-tKdVz1ZtklG3nQViuK7uf0qnjmzX+pt5f+sOSUxX8JQ=";
       }
       .${stdenvNoCC.hostPlatform.system} or (throw "authentik-website-deps: unsupported host platform");
 
@@ -150,6 +133,7 @@ let
     ];
 
     buildPhase = ''
+      chmod -R +w ..
       npm ci --cache ./cache
 
       rm -r ./cache node_modules/.package-lock.json
@@ -208,8 +192,8 @@ let
 
     outputHash =
       {
-        "aarch64-linux" = "sha256-J9wGQe7iMfKznNk3woqi0VNVNA/dE6TGi2f44DOlG1c=";
-        "x86_64-linux" = "sha256-9Q590Rw0mk3q5osxOKGWU7+XtKwkTyA+CLC2LxAA/3g=";
+        "aarch64-linux" = "sha256-41xZEfLul92vJATZqyVnd7Pp++NzLL/u8NeJJPHpXrw=";
+        "x86_64-linux" = "sha256-FpfOl6wNCgXLg86+vbjnYkcOnpaOZBCNxJiFDRT5W3s=";
       }
       .${stdenvNoCC.hostPlatform.system} or (throw "authentik-webui-deps: unsupported host platform");
     outputHashMode = "recursive";
@@ -220,6 +204,7 @@ let
     ];
 
     buildPhase = ''
+      chmod -R +w ..
       npm ci --cache ./cache --ignore-scripts
 
       rm -r ./cache node_modules/.package-lock.json
@@ -295,7 +280,7 @@ let
     ];
   };
 
-  python = python3.override {
+  python = python314.override {
     self = python;
     packageOverrides = final: prev: {
       # https://github.com/goauthentik/authentik/pull/16324
@@ -376,60 +361,21 @@ let
         ];
       };
 
-      # Running authentik currently requires a custom version.
-      # Look in `pyproject.toml` for changes to the rev in the `[tool.uv.sources]` section.
-      # See https://github.com/goauthentik/authentik/pull/14057 for latest version bump.
-      djangorestframework = final.buildPythonPackage {
-        pname = "djangorestframework";
-        version = "3.16.0";
-        format = "setuptools";
-
-        src = fetchFromGitHub {
-          owner = "authentik-community";
-          repo = "django-rest-framework";
-          rev = "896722bab969fabc74a08b827da59409cf9f1a4e";
-          hash = "sha256-YrEDEU3qtw/iyQM3CoB8wYx57zuPNXiJx6ZjrIwnCNU=";
-        };
-
-        propagatedBuildInputs = with final; [
-          django
-          pytz
-        ];
-
-        nativeCheckInputs = with final; [
-          pytest-django
-          pytest7CheckHook
-
-          # optional tests
-          coreapi
-          django-guardian
-          inflection
-          pyyaml
-          uritemplate
-        ];
-
-        disabledTests = [
-          "test_ignore_validation_for_unchanged_fields"
-          "test_invalid_inputs"
-          "test_shell_code_example_rendering"
-          "test_unique_together_condition"
-          "test_unique_together_with_source"
-        ];
-
-        pythonImportsCheck = [ "rest_framework" ];
-      };
-
-      # authentik is currently not compatible with v1.18 and fails with the following error:
-      # > AttributeError: 'Namespace' object has no attribute 'worker_fork_timeout'. Did you mean: 'worker_shutdown_timeout'?
-      dramatiq = prev.dramatiq.overrideAttrs (_: rec {
-        version = "1.17.1";
+      # authentik requires a newer dramatiq than the nixpkgs default.
+      dramatiq = prev.dramatiq.overrideAttrs (old: rec {
+        version = "2.1.0";
 
         src = fetchFromGitHub {
           owner = "Bogdanp";
           repo = "dramatiq";
           tag = "v${version}";
-          hash = "sha256-NeUGhG+H6r+JGd2qnJxRUbQ61G7n+3tsuDugTin3iJ4=";
+          hash = "sha256-wUE3R/lFafP7P9tjKjFC+jwCc3jkvGeXunC8AhkBLbM=";
         };
+
+        disabledTests = old.disabledTests ++ [
+          # Timing-sensitive under load on the aarch64-linux builder.
+          "test_actor_messages_can_be_assigned_time_limits"
+        ];
       });
 
       authentik-django = final.buildPythonPackage {
@@ -548,7 +494,7 @@ let
 
   inherit (python.pkgs) authentik-django;
 
-  # Provide a setup-hook to configure the Go vendor directory with up-to-date API bindings.
+  # Provide a setup-hook to configure the Go source tree with up-to-date API bindings.
   # This is done to avoid the `vendorHash` depending on anything in the `client-go` build (e.g.
   # openapi-generator-cli version updates changing the produced content) and invalidating the hash.
   apiGoVendorHook =
@@ -559,9 +505,11 @@ let
       (
         writeShellScript "authentik-api-go-vendor-hook" ''
           authentikApiGoVendorHook() {
-            chmod -R +w vendor/goauthentik.io/api
-            rm -rf vendor/goauthentik.io/api/v3
-            cp -r ${client-go} vendor/goauthentik.io/api/v3
+            chmod -R +w packages/client-go
+            rm -rf packages/client-go
+            cp -r ${client-go} packages/client-go
+            chmod -R +w packages/client-go
+            rm -f packages/client-go/go.mod packages/client-go/go.sum
 
             echo "Finished authentikApiGoVendorHook"
           }
@@ -593,7 +541,7 @@ let
     # calculate the vendorHash without other dependencies, so it is only based on the `go.sum` file
     overrideModAttrs.postPatch = "";
 
-    vendorHash = "sha256-pdQg02f1K4nOhsnadoplQYOhEybqZxn+yDQRN5RNygM=";
+    vendorHash = "sha256-EVDOZ4USaJoIBDB8mM4ZSBfsSc1d/NOm1Qv/hUJ+8f4=";
 
     postInstall = ''
       mv $out/bin/server $out/bin/authentik
@@ -612,11 +560,6 @@ stdenvNoCC.mkDerivation {
   postPatch = ''
     rm Makefile
     patchShebangs lifecycle/ak
-
-    # This causes issues in systemd services
-    substituteInPlace lifecycle/ak \
-      --replace-fail 'printf' '>&2 printf' \
-      --replace-fail '>/dev/stderr' ""
   '';
 
   installPhase = ''
